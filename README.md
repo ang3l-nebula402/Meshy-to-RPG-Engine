@@ -70,6 +70,7 @@ None of these are dealbreakers, all of them are honest:
 - **Weirdly-rigged models can show distortion during action animations.** Meshy's default rig is fine; if you're using a different rigging tool and things look off, [RIG-GUIDE.md](RIG-GUIDE.md) has thoughts.
 - **A slight sheen remains** even after the material tone-down. URP interprets Meshy's PBR properties differently than Meshy's own viewer does. The mod gets it close, not identical.
 - **Only the host's imports sync.** If a peer imports a mesh, the host and other peers won't see it. Usually fine (the GM does the imports) but worth knowing.
+- **Newly placed characters need one small GM nudge to fully sync on peer screens.** After you place a custom character, click it in edit mode (Tab) and drag it a hair in any direction. That triggers the last bit of engine state that the mod can't cleanly force on its own. One click per placement. After that, everything on the peer side is fully in sync (position, animations, movement, aim). Existing placements load correctly on session restart with no nudge needed.
 
 ## License
 

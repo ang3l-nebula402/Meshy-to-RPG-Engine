@@ -20,6 +20,10 @@ namespace RpgEngineAnimatedMeshMod
     /// </summary>
     internal static class HumanoidAvatarBuilder
     {
+        // Exposed for other builders (e.g. hand-hold-point install) that need
+        // the same name-alias table to locate specific bones.
+        internal static (HumanBodyBones Bone, string[] Candidates)[] BoneMapForCapture => BONE_MAP;
+
         // Unity HumanBodyBones (only the required + commonly-supplied bones ,
         // Unity fills in fingers and jaw from the skeleton array if present).
         // Each entry lists candidate Transform names in preference order.

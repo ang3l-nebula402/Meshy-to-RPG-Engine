@@ -68,4 +68,17 @@
     <Message Text="→ Copied plugin to $(GAMEDIR)/BepInEx/plugins" Importance="high" />
   </Target>
 
+  <!-- Also drop into the dist/ folder that the local HTTP server hosts, so
+       remote peers always download whatever version was last built. Prevents
+       the "player still on old version" trap where a peer's log shows an
+       older build than what the host has running. -->
+  <PropertyGroup>
+    <DISTPLUGIN>$(MSBuildProjectDirectory)/../dist/RpgEngine-AnimatedCustomMesh-v3.1.10/BepInEx/plugins</DISTPLUGIN>
+  </PropertyGroup>
+  <Target Name="CopyToDist" AfterTargets="Build" Condition="Exists('$(DISTPLUGIN)')">
+    <Copy SourceFiles="$(OutputPath)/RpgEngineAnimatedMeshMod.dll"
+          DestinationFolder="$(DISTPLUGIN)" />
+    <Message Text="→ Copied plugin to dist ($(DISTPLUGIN))" Importance="high" />
+  </Target>
+
 </Project>

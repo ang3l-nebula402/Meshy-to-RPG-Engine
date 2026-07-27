@@ -23,6 +23,11 @@ namespace RpgEngineAnimatedMeshMod
     /// </summary>
     internal static class AnimationBuilder
     {
+        // Instance-IDs of pickupables where AlignMeshToGround already warned about
+        // broken bounds. Prevents 30 identical log lines per import when IdleGuard
+        // retries every frame.
+        private static readonly HashSet<int> _loggedBrokenBoundsThisSession = new HashSet<int>();
+
         internal static void InstallAnimator(GameObject root)
         {
             var log = Plugin.Log;
@@ -353,6 +358,35 @@ namespace RpgEngineAnimatedMeshMod
             var guard = root.GetComponent<IdleGuard>() ?? root.AddComponent<IdleGuard>();
             guard.Init(root.GetComponent<Animator>());
 
+            // v3.1.19: hand-hold points for prop attachment. Add a Holder
+            // component to root with LeftHand + RightHand transforms as its
+            // editorHoldPoints. The engine's existing ParentApplicator.
+            // TrySetNewHolder path (fires when a player drags a prop onto a
+            // character) checks parent.TryGetComponent<Holder>() and calls
+            // Holder.LockTo. With this in place, dragging any prop onto our
+            // custom mesh snaps it to the closest hand, same as native NPCs.
+            InstallHandHoldPoints(root);
+
+            // v3.1.24: trigger a NavMesh rebake around the freshly-installed
+            // pickupable. This is what the engine does when GM moves a
+            // character (via NetworkSend.UpdatePropLocation → ClientReceive
+            // path calls NavMeshController.TryAsyncReBake). Without it, peer
+            // NavMeshAgents never land on a valid NavMesh, Puppet.Update
+            // force-disables the agent every frame, and animations feel
+            // frozen until the GM manually bumps the character. Doing it
+            // here at install time makes the "wake up" happen automatically.
+            TryNavMeshRebake(root);
+
+            // v3.1.25: rebake alone isn't the full "GM moved" wake-up. What
+            // actually snaps peers into sync is the UpdatePropLocation
+            // network packet the engine sends when GM's transform changes.
+            // Peer's ClientReceive.UpdatePropLocation does SetParent +
+            // SetPosition + (conditional) rebake, which fixes both the
+            // slightly-wrong initial peer position AND the frozen-animator
+            // state. Send it ourselves on the host so peers don't have to
+            // wait for the GM to bump the character manually.
+            TryBroadcastPropLocation(root);
+
             // v3.1.14: try again to tone down chrome with MaterialPropertyBlock.
             // MPB is per-renderer OVERRIDE data that doesn't touch the actual
             // material asset, so it can't strip textures the way direct
@@ -556,28 +590,38 @@ namespace RpgEngineAnimatedMeshMod
         /// Meshy GLBs typically export with a local-origin BELOW the feet,
         /// so the mesh floats above the transform without this correction.
         /// </summary>
+        /// <summary>Public wrapper so IdleGuard can re-invoke alignment each frame.</summary>
+        internal static void AlignMeshToGroundExternal(GameObject root) => AlignMeshToGround(root);
+
         private static void AlignMeshToGround(GameObject root)
         {
             var log = Plugin.Log;
             var smr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault();
             if (smr == null) return;
 
-            // Use SMR's world-space bounds directly, accounts for skinning +
-            // the full transform chain. v3.1.10's sharedMesh.bounds approach
-            // reported 0.000m float even when the mesh clearly floated.
-            // Force one bounds update in case the mesh just spawned.
             smr.ResetBounds();
             var worldBounds = smr.bounds;
             var lowestY = worldBounds.min.y;
             var floatAmount = lowestY - root.transform.position.y;
 
-            log.LogInfo($"AlignMeshToGround: SMR world bounds min.y={lowestY:F3}, root.y={root.transform.position.y:F3}, floatAmount={floatAmount:F3}m.");
-
-            if (floatAmount < 0.05f)
+            // Sanity gate on BOTH sides. Real characters float within roughly
+            // -0.5m to +3m. Anything outside that band = broken bounds (mesh
+            // vertices in orbit, or 100+m underground due to bad skinning
+            // weights). Neither case is safe to act on. Skip silently to
+            // avoid the log spam that IdleGuard's repeated retries would
+            // otherwise produce.
+            if (floatAmount > 3f || floatAmount < -3f)
             {
-                log.LogInfo("  → mesh already grounded, skipping.");
+                // Log ONCE per install rather than every retry frame.
+                if (!_loggedBrokenBoundsThisSession.Contains(root.GetInstanceID()))
+                {
+                    log.LogWarning($"AlignMeshToGround: '{root.name}' has broken SMR bounds (min.y={lowestY:F1}, root.y={root.transform.position.y:F1}, delta={floatAmount:F1}m). Mesh may render at wrong location, but skip is safer than shift.");
+                    _loggedBrokenBoundsThisSession.Add(root.GetInstanceID());
+                }
                 return;
             }
+
+            if (floatAmount < 0.05f) return;   // already grounded, no need to log
 
             // Shift the mesh child (the imported GLB root, usually parented
             // to a "GFX" transform on the PickupableMesh) down by floatAmount.
@@ -594,6 +638,184 @@ namespace RpgEngineAnimatedMeshMod
 
             meshChild.localPosition -= new Vector3(0f, floatAmount, 0f);
             log.LogInfo($"  → shifted '{meshChild.name}' down by {floatAmount:F3}m.");
+        }
+
+        /// <summary>
+        /// Add a RpgEngine.Parenting.Holder component to root with LeftHand and
+        /// RightHand transforms registered as hold points. This lets the engine's
+        /// existing prop-parenting UI attach any prop (weapon, torch, etc.) to
+        /// the character's hand automatically, exactly as with native NPCs.
+        ///
+        /// Wrinkle: Holder.Awake() populates the runtime `holdPoints` dictionary
+        /// from `editorHoldPoints` at add-time, before we get a chance to set
+        /// the list. So we add the component, populate editorHoldPoints, then
+        /// manually rebuild the holdPoints dict ourselves (mimicking Awake).
+        /// </summary>
+        private static void InstallHandHoldPoints(GameObject root)
+        {
+            var log = Plugin.Log;
+            var holderType = HarmonyLib.AccessTools.TypeByName("RpgEngine.Parenting.Holder");
+            var holdPointType = HarmonyLib.AccessTools.TypeByName("RpgEngine.Parenting.HoldPoint");
+            if (holderType == null || holdPointType == null)
+            {
+                log.LogWarning("InstallHandHoldPoints: RpgEngine.Parenting.Holder / HoldPoint not found. Prop attachment disabled for this mesh.");
+                return;
+            }
+
+            // Find the hand transforms by walking the same candidate-name list
+            // HumanoidAvatarBuilder uses. Right hand first (dominant hand, so
+            // it gets the closer hold point ID; the engine picks by distance
+            // anyway so ordering only matters for tie-breaks).
+            var byName = new Dictionary<string, Transform>();
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                if (!byName.ContainsKey(t.name)) byName[t.name] = t;
+
+            Transform FindByCandidates(HumanBodyBones bone)
+            {
+                foreach (var (b, candidates) in HumanoidAvatarBuilder.BoneMapForCapture)
+                {
+                    if (b != bone) continue;
+                    foreach (var name in candidates)
+                        if (byName.TryGetValue(name, out var t)) return t;
+                }
+                return null;
+            }
+            var handTransforms = new List<Transform>();
+            var right = FindByCandidates(HumanBodyBones.RightHand);
+            var left  = FindByCandidates(HumanBodyBones.LeftHand);
+            if (right != null) handTransforms.Add(right);
+            if (left  != null) handTransforms.Add(left);
+            if (handTransforms.Count == 0)
+            {
+                log.LogWarning("InstallHandHoldPoints: neither LeftHand nor RightHand were mapped. No hold points to install.");
+                return;
+            }
+
+            // Idempotent — if we already added one, don't re-add.
+            var existing = root.GetComponent(holderType);
+            if (existing != null)
+            {
+                log.LogInfo($"InstallHandHoldPoints: Holder already present on '{root.name}', skipping.");
+                return;
+            }
+
+            var holder = root.AddComponent(holderType);
+
+            // Set editorHoldPoints via reflection (public field). Then rebuild the
+            // runtime holdPoints dictionary the same way Awake does.
+            var editorField = holderType.GetField("editorHoldPoints");
+            var runtimeField = holderType.GetField("holdPoints");
+            if (editorField == null || runtimeField == null)
+            {
+                log.LogWarning("InstallHandHoldPoints: Holder fields (editorHoldPoints / holdPoints) not found. Structure changed?");
+                return;
+            }
+
+            editorField.SetValue(holder, handTransforms);
+
+            // Build the dictionary <int, HoldPoint>. Constructor: HoldPoint(int id, Transform transform).
+            var dictType = typeof(Dictionary<,>).MakeGenericType(typeof(int), holdPointType);
+            var dict = System.Activator.CreateInstance(dictType);
+            var addMethod = dictType.GetMethod("Add", new[] { typeof(int), holdPointType });
+            var holdPointCtor = holdPointType.GetConstructor(new[] { typeof(int), typeof(Transform) });
+            if (addMethod == null || holdPointCtor == null)
+            {
+                log.LogWarning("InstallHandHoldPoints: HoldPoint constructor or Dictionary.Add not found. Skipping runtime dict build.");
+                return;
+            }
+            for (int i = 0; i < handTransforms.Count; i++)
+            {
+                var hp = holdPointCtor.Invoke(new object[] { i + 1, handTransforms[i] });
+                addMethod.Invoke(dict, new object[] { i + 1, hp });
+            }
+            runtimeField.SetValue(holder, dict);
+
+            log.LogInfo($"InstallHandHoldPoints: added Holder with {handTransforms.Count} hold point(s): {string.Join(", ", handTransforms.Select(t => t.name))}.");
+        }
+
+        /// <summary>
+        /// Ask NavMeshController to re-bake the navigation mesh around this
+        /// pickupable. Mirrors what the engine does when GM movement flows
+        /// through ClientReceive.UpdatePropLocation. Without this, peer-side
+        /// NavMeshAgents stay off-mesh and Puppet.Update ends up disabling
+        /// the agent every frame — which prevents animations from playing
+        /// visibly until the GM bumps the character manually. Async so it
+        /// doesn't block; result ignored (we don't need to wait for it).
+        /// </summary>
+        private static void TryNavMeshRebake(GameObject root)
+        {
+            var log = Plugin.Log;
+            try
+            {
+                var pickupableType = HarmonyLib.AccessTools.TypeByName("RpgEngine.Pickupable");
+                if (pickupableType == null) return;
+                var pickupable = root.GetComponent(pickupableType);
+                if (pickupable == null) return;
+
+                var ctrlType = HarmonyLib.AccessTools.TypeByName("RpgEngine.NavMeshController");
+                if (ctrlType == null) { log.LogWarning("TryNavMeshRebake: NavMeshController type not found."); return; }
+                var instField = ctrlType.GetField("instance",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy);
+                var inst = instField?.GetValue(null);
+                if (inst == null) { log.LogWarning("TryNavMeshRebake: NavMeshController.instance is null."); return; }
+
+                var method = HarmonyLib.AccessTools.Method(ctrlType, "TryAsyncReBake", new[] { pickupableType });
+                if (method == null) { log.LogWarning("TryNavMeshRebake: TryAsyncReBake(Pickupable) not found."); return; }
+
+                method.Invoke(inst, new object[] { pickupable });
+                log.LogInfo($"TryNavMeshRebake: queued rebake around '{root.name}' — agent will land on NavMesh next tick.");
+            }
+            catch (System.Exception ex)
+            {
+                log.LogWarning($"TryNavMeshRebake threw (non-fatal): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Host-only: send NetworkSend.UpdatePropLocation(guid, TCP:true) so
+        /// peers receive the "wake up" packet automatically instead of needing
+        /// the GM to manually bump the character. On peer side this triggers
+        /// ClientReceive.UpdatePropLocation which does SetParent + SetPosition
+        /// (and conditionally a rebake) — the exact sequence that snaps a
+        /// freshly-spawned custom mesh into full sync.
+        /// </summary>
+        private static void TryBroadcastPropLocation(GameObject root)
+        {
+            var log = Plugin.Log;
+            try
+            {
+                // Only host broadcasts; on peer this call is a no-op or wrong-direction.
+                var lobbyType = HarmonyLib.AccessTools.TypeByName("UnityUtils.Steam.LobbyManager")
+                             ?? HarmonyLib.AccessTools.TypeByName("RpgEngine.Steam.RpgLobbyManager");
+                var isServerProp = lobbyType?.GetProperty("isServer",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy);
+                if (isServerProp != null && !(bool)isServerProp.GetValue(null)) return;
+
+                var pickupableType = HarmonyLib.AccessTools.TypeByName("RpgEngine.Pickupable");
+                var pickupable = pickupableType != null ? root.GetComponent(pickupableType) : null;
+                if (pickupable == null) return;
+                var guidProp = pickupableType.GetProperty("guid",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                var guid = guidProp?.GetValue(pickupable) as string;
+                if (string.IsNullOrEmpty(guid)) return;
+
+                var netSendType = HarmonyLib.AccessTools.TypeByName("RpgEngine.NetworkSend");
+                if (netSendType == null) return;
+                var method = HarmonyLib.AccessTools.Method(netSendType, "UpdatePropLocation",
+                    new[] { typeof(string), typeof(bool) });
+                if (method == null)
+                {
+                    log.LogWarning("TryBroadcastPropLocation: NetworkSend.UpdatePropLocation(string, bool) not found.");
+                    return;
+                }
+
+                method.Invoke(null, new object[] { guid, true });
+                log.LogInfo($"TryBroadcastPropLocation: sent UpdatePropLocation for '{guid}' — peers should sync without needing GM to bump the character.");
+            }
+            catch (System.Exception ex)
+            {
+                log.LogWarning($"TryBroadcastPropLocation threw (non-fatal): {ex.Message}");
+            }
         }
 
         private static void EnsureCollider(GameObject root, SkinnedMeshRenderer smr)
@@ -622,11 +844,27 @@ namespace RpgEngineAnimatedMeshMod
 
             var box = root.AddComponent<BoxCollider>();
             var b = smr.bounds;
-            box.center = root.transform.InverseTransformPoint(b.center);
-            box.size = new Vector3(Mathf.Max(0.1f, b.size.x),
-                                    Mathf.Max(0.1f, b.size.y),
-                                    Mathf.Max(0.1f, b.size.z));
-            Plugin.Log.LogInfo($"Added BoxCollider on '{root.name}', center={box.center} size={box.size}");
+
+            // Sanity clamp both dimensions and center. Some Meshy exports come
+            // in with broken SkinnedMeshRenderer bounds (min.y in the thousands,
+            // size >100m per axis). Without clamping we build a monster
+            // collider that catches raycasts from across the map AND makes the
+            // Tilt5 selector spam NREs every frame. Real character bounds are
+            // roughly 0.5-3m per side; anything larger is bogus.
+            var center = root.transform.InverseTransformPoint(b.center);
+            if (center.magnitude > 5f)
+            {
+                Plugin.Log.LogWarning($"BoxCollider center {center} is unrealistic (bounds likely broken). Using origin instead.");
+                center = new Vector3(0f, 1f, 0f);   // approximate character mid-height
+            }
+            box.center = center;
+
+            var size = new Vector3(
+                Mathf.Clamp(b.size.x, 0.5f, 3f),
+                Mathf.Clamp(b.size.y, 0.5f, 3f),
+                Mathf.Clamp(b.size.z, 0.5f, 3f));
+            box.size = size;
+            Plugin.Log.LogInfo($"Added BoxCollider on '{root.name}', center={box.center} size={box.size} (raw bounds size={b.size}).");
         }
 
         private static string GetPath(Transform t, Transform root)
@@ -718,13 +956,17 @@ namespace RpgEngineAnimatedMeshMod
     public class HumanoidTag : MonoBehaviour { }
 
     /// <summary>
-    /// Watchdog: forces the humanoid animator into the Idle state for the
-    /// first ~30 frames after install. On session reload the engine restores
-    /// prop.animations state (via SetAnimationData) AFTER our animator is
-    /// installed, which can leave the character stuck in whatever pose was
-    /// serialized last session (arms raised, mid-combat pose). By repeatedly
-    /// snapping back to Idle for a short window we override those late
-    /// state-restoration calls. Self-disables after the window expires.
+    /// Watchdog running for the first ~30 frames after a custom-mesh install.
+    /// Three jobs, all timing-related:
+    ///
+    /// 1. Force the animator into Idle each frame, overriding any late
+    ///    state-restoration from the engine's disk-save reload path.
+    /// 2. Re-run AlignMeshToGround each frame so we correct floating that
+    ///    happens when the initial spawn-time bounds read is stale (peer
+    ///    side commonly, but also GM-side sometimes).
+    /// 3. Force SkinnedMeshRenderer bounds refresh each frame so the renderer
+    ///    isn't frustum-culled to invisibility before its first update
+    ///    (the "won't appear on peer until GM does an action" bug).
     /// </summary>
     public class IdleGuard : MonoBehaviour
     {
@@ -741,12 +983,32 @@ namespace RpgEngineAnimatedMeshMod
 
         private void LateUpdate()
         {
-            if (_animator == null || _framesLeft <= 0) { enabled = false; return; }
-            foreach (var s in IdleStateNames)
+            if (_framesLeft <= 0) { enabled = false; return; }
+
+            // 1. Force Idle on the animator every frame (still cheap, catches
+            //    late SetAnimationData restoration from the engine's disk-save).
+            if (_animator != null)
             {
-                try { _animator.Play(s, 0, 0f); } catch { /* try next */ }
+                foreach (var s in IdleStateNames)
+                {
+                    try { _animator.Play(s, 0, 0f); } catch { /* try next */ }
+                }
+                try { _animator.SetFloat("Movement Speed", 0f); } catch { }
             }
-            try { _animator.SetFloat("Movement Speed", 0f); } catch { }
+
+            // 2. Ground alignment + bounds reset only every 5th frame. Cheaper
+            //    on CPU AND avoids the log spam of the same "already grounded"
+            //    line repeating 30 times per import. Still hits the SMR often
+            //    enough to catch late bounds population.
+            if (_framesLeft % 5 == 0)
+            {
+                try { AnimationBuilder.AlignMeshToGroundExternal(gameObject); } catch { }
+                foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    try { smr.ResetBounds(); } catch { }
+                }
+            }
+
             _framesLeft--;
             if (_framesLeft == 0) enabled = false;
         }

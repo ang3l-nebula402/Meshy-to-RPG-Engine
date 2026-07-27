@@ -11,7 +11,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.18";
+        public const string PluginVersion = "3.1.25";
 
         internal static ManualLogSource Log;
 
@@ -102,6 +102,12 @@ namespace RpgEngineAnimatedMeshMod
                 // their client cache resolves the mesh instead of showing
                 // the '?' placeholder.
                 MeshBroadcastPatch.ApplyAll(harmony);
+                // v3.1.22: self-heal for corrupt on-disk mesh cache files.
+                // If Deserialize throws FormatException (truncated file from
+                // interrupted transfer, or format-mismatch from an older mod
+                // version's broken broadcast), delete the file so the engine's
+                // request-from-server fallback replaces it cleanly next time.
+                CorruptCacheSelfHealPatch.ApplyAll(harmony);
                 Log.LogInfo("Harmony patches applied.");
 
                 // Eager attempt: often the C_Humanoid controller is loaded

@@ -187,16 +187,25 @@ namespace RpgEngineAnimatedMeshMod.Patches
                 }
 
                 // Reflect out id + bytes from RPGMesh.
+                // CRITICAL: `binaryFile` is the RAW GLB. But packet 110
+                // (UpdateGlobalRPGMesh) expects bytes in RPGMeshPacket
+                // SERIALIZED format (version + id + textures + mesh +
+                // playModeActive + binaryFile length + binaryFile +
+                // binaryFileType). Sending raw GLB here would corrupt the
+                // peer's cache, causing Deserialize to throw FormatException
+                // and forcing a slow re-request. So we extract the id here,
+                // but pull the SERIALIZED bytes from the host's RpgMeshCache
+                // below (which was populated by the engine's Write(RPGMesh)
+                // path at import time and stores the serialized form).
                 var rpgMeshType = value.GetType();
                 var idField = rpgMeshType.GetField("id") ?? (MemberInfo)rpgMeshType.GetProperty("id");
-                var bytesField = rpgMeshType.GetField("binaryFile") ?? (MemberInfo)rpgMeshType.GetProperty("binaryFile");
                 string id = (idField is FieldInfo fi ? fi.GetValue(value) : ((PropertyInfo)idField).GetValue(value)) as string;
-                byte[] bytes = (bytesField is FieldInfo fi2 ? fi2.GetValue(value) : ((PropertyInfo)bytesField).GetValue(value)) as byte[];
-                if (string.IsNullOrEmpty(id) || bytes == null || bytes.Length == 0)
+                if (string.IsNullOrEmpty(id))
                 {
-                    Plugin.Log.LogInfo($"[sync] Skip (id='{id}', bytes={(bytes == null ? "null" : bytes.Length.ToString())}).");
+                    Plugin.Log.LogInfo($"[sync] Skip (no id on RPGMesh).");
                     return;
                 }
+                byte[] bytes = null;   // populated from cache after we ensure it's stored
 
                 // 1. Ensure the host's RpgMeshCache has this mesh. The engine
                 //    normally writes on FileBrowser import; if we're running
@@ -229,6 +238,8 @@ namespace RpgEngineAnimatedMeshMod.Patches
                         if (!inCache)
                         {
                             // Write(RPGMesh data, bool persist=true) is inherited from ItemCache.
+                            // Also triggers Serialize which produces the RPGMeshPacket-format
+                            // bytes we need for the broadcast.
                             var write = AccessTools.Method(cacheType, "Write",
                                 new[] { rpgMeshType, typeof(bool) });
                             if (write != null)
@@ -237,7 +248,26 @@ namespace RpgEngineAnimatedMeshMod.Patches
                                 Plugin.Log.LogInfo($"[sync] Force-wrote '{id}' to RpgMeshCache (was missing).");
                             }
                         }
+
+                        // Now pull the SERIALIZED bytes out via the byte[] overload.
+                        // These are what packet 110's receiver expects to Deserialize.
+                        var tryGetBytes = AccessTools.Method(cacheType, "TryGetValue",
+                            new[] { typeof(string), typeof(byte[]).MakeByRefType() });
+                        if (tryGetBytes != null)
+                        {
+                            var bytesArgs = new object[] { id, null };
+                            if ((bool)tryGetBytes.Invoke(cacheInst, bytesArgs))
+                            {
+                                bytes = bytesArgs[1] as byte[];
+                            }
+                        }
                     }
+                }
+
+                if (bytes == null || bytes.Length == 0)
+                {
+                    Plugin.Log.LogWarning($"[sync] Could not retrieve serialized bytes for '{id}' from RpgMeshCache. Broadcast skipped.");
+                    return;
                 }
 
                 // 2. Check HasClients before broadcasting, UpdateGlobalRPGMesh
