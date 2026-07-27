@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>RpgEngineAnimatedMeshMod</AssemblyName>
+    <RootNamespace>RpgEngineAnimatedMeshMod</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>CS0649;CS0169;CS8632</NoWarn>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+
+    <!-- Path to The RPG Engine's Steam install. Override at build time with
+         `dotnet build -c Release -p:GAMEDIR="/custom/path"` if yours differs. -->
+    <GAMEDIR Condition="'$(GAMEDIR)' == ''">$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))/.local/share/Steam/steamapps/common/The RPG Engine</GAMEDIR>
+    <GAMEMANAGED>$(GAMEDIR)/The_RPG_Engine_Data/Managed</GAMEMANAGED>
+    <BEPINEXCORE>$(GAMEDIR)/BepInEx/core</BEPINEXCORE>
+  </PropertyGroup>
+
+  <!-- BepInEx runtime + Harmony patching, reference the DLLs the user installed
+       into the game folder rather than pulling packages from NuGet (BepInEx
+       doesn't ship its runtime as a public NuGet package). -->
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BEPINEXCORE)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BEPINEXCORE)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Unity engine assemblies from the game itself. Guarantees version match. -->
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.AIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- GLTFUtility so we can strongly-type the ImportGLB patch. -->
+    <Reference Include="Siccity.GLTFUtility">
+      <HintPath>$(GAMEMANAGED)/Siccity.GLTFUtility.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- After build, drop the DLL straight into the plugins folder for a
+       one-shot edit → build → restart-game iteration loop. -->
+  <Target Name="CopyToGame" AfterTargets="Build" Condition="Exists('$(GAMEDIR)/BepInEx/plugins')">
+    <Copy SourceFiles="$(OutputPath)/RpgEngineAnimatedMeshMod.dll"
+          DestinationFolder="$(GAMEDIR)/BepInEx/plugins" />
+    <Message Text="→ Copied plugin to $(GAMEDIR)/BepInEx/plugins" Importance="high" />
+  </Target>
+
+</Project>

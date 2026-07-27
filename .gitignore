@@ -1,0 +1,19 @@
+# Build outputs
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local dev artifacts — not part of source
+backups/
+dist/
+_disabled/
+tools/
+
+# OS junk
+.DS_Store
+Thumbs.db
