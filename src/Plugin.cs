@@ -12,7 +12,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.33";
+        public const string PluginVersion = "3.1.34";
 
         internal static ManualLogSource Log;
 
@@ -165,6 +165,9 @@ namespace RpgEngineAnimatedMeshMod
                 CorruptCacheSelfHealPatch.ApplyAll(harmony);
                 // v3.1.33: Tilt Five without wands (see Tilt5HideWands).
                 Tilt5HideWands.ApplyAll(harmony);
+                // v3.1.34: host-owned model heights + reliable transform resends.
+                ModelSync.ApplyAll(harmony);
+                SyncGuard.Create();
                 Log.LogInfo("Harmony patches applied.");
 
                 // Eager attempt: often the C_Humanoid controller is loaded
@@ -206,6 +209,13 @@ namespace RpgEngineAnimatedMeshMod
         /// </summary>
         internal static void SetHeightAdjust(string meshId, float metres)
         {
+            // v3.1.34: heights belong to the host, players only see them.
+            if (!ModelSync.IsServer)
+            {
+                Log.LogInfo($"HeightPanel: '{meshId}' height is set by the host, ignoring a local change.");
+                return;
+            }
+
             metres = Mathf.Round(metres * 100f) / 100f;
             try
             {
@@ -218,8 +228,12 @@ namespace RpgEngineAnimatedMeshMod
             }
 
             foreach (var ground in GroundOffset.All)
-                if (ground != null && ground.MeshId == meshId) ground.SetManual(metres);
-            Log.LogInfo($"HeightPanel: '{meshId}' manual height set to {metres:+0.00;-0.00;0}m.");
+            {
+                if (ground == null || ground.MeshId != meshId) continue;
+                ground.SetManual(metres);
+                ModelSync.PushHeight(ground, metres);
+            }
+            Log.LogInfo($"HeightPanel: '{meshId}' manual height set to {metres:+0.00;-0.00;0}m and sent to players.");
         }
 
         private static ConfigEntry<float> BindHeightAdjust(string meshId, bool reload)

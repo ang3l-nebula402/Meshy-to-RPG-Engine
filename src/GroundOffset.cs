@@ -49,6 +49,10 @@ namespace RpgEngineAnimatedMeshMod
         private void OnDestroy() => All.Remove(this);
 
         private string _meshId;
+        private Component _pickupable;
+
+        /// <summary>The engine's PickupableMesh this offset belongs to (v3.1.34, for ModelSync).</summary>
+        internal Component Pickupable => _pickupable;
         private Transform _hips;
         private Transform _meshChild;
         private float _autoLocal;
@@ -66,13 +70,16 @@ namespace RpgEngineAnimatedMeshMod
         {
             if (root == null) return;
             var ground = root.GetComponent<GroundOffset>() ?? root.AddComponent<GroundOffset>();
-            ground.Init(ReadMeshId(pickupable));
+            ground._pickupable = pickupable as Component;
+            var meshId = ReadMeshId(pickupable);
+            // v3.1.34: the host's height wins on every PC (see ModelSync).
+            ground.Init(meshId, ModelSync.ResolveHeight(ground._pickupable, meshId));
         }
 
-        private void Init(string meshId)
+        private void Init(string meshId, float manual)
         {
             _meshId = meshId;
-            _manualLocal = Plugin.GetHeightAdjust(meshId);
+            _manualLocal = manual;
 
             // A re-import can switch modes (mesh child → hips once the humanoid
             // Animator lands) or swap the mesh. Take back any shift already on

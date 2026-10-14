@@ -19,6 +19,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 - **Feet on the ground.** Meshy models rarely have their feet where the engine expects, so they used to sink or float every time you dragged them. The mod measures each model and keeps its feet on the floor through drags, walking and reloads. Need a centimetre or two either way? Press **F8** in game for the Model Heights panel.
 - **Textures that actually show up.** Current Meshy exports used to import as a blank (or dark chrome) shape. The mod puts the colour texture where the engine's shader looks for it, with a gentle glow so models stay readable in dim scenes like the older exports did.
 - **The whole Tilt Five XE mat.** The engine clips what the glasses see to a square sized for the standard board, which blacks out the far third of an XE mat. When a map uses a Tilt Five board object and the board is an XE, the mod opens that up to the full mat. Needs the mod on the PC the glasses are plugged into.
+- **Everyone sees the same thing.** Model heights set by the host reach every player, and once the host stops moving, rotating or scaling an imported model, the final result is resent reliably (a few extra times for a freshly placed model, so players still downloading it catch up).
 - **Tilt Five without wands.** By default the mod hides the wand, its laser and the floating button toolbar, and ignores every wand button, trigger and stick, so the glasses are just a window onto the map. Set `HideWands = false` under `[TiltFive]` in the mod's config to use wands again.
 - **Less chrome.** URP's default rendering makes every GLB look like it was dipped in chrome. This dials that back to something closer to what Meshy showed you.
 - **No stuck-pose surprises.** Reloading a session used to leave characters in bizarre saved-mid-attack poses. Fixed.
@@ -33,7 +34,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 
 Full step-by-step in [INSTALL.md](INSTALL.md). The one-paragraph version:
 
-Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.33 loading` and you're in.
+Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.34 loading` and you're in.
 
 ## Multiplayer
 
@@ -75,7 +76,7 @@ None of these are dealbreakers, all of them are honest:
 - **Weirdly-rigged models can show distortion during action animations.** Meshy's default rig is fine; if you're using a different rigging tool and things look off, [RIG-GUIDE.md](RIG-GUIDE.md) has thoughts.
 - **A slight sheen remains** even after the material tone-down. URP interprets Meshy's PBR properties differently than Meshy's own viewer does. The mod gets it close, not identical.
 - **Filling an XE mat needs a board object.** Without one, the engine shrinks every map into a square on the near part of the mat. For a map that fills it, make it about 1 : 1.4 (for example 50 x 10 x 69) and place a Tilt Five board object at 0, 0, 9.5 with scale 1, type XE, set as the starting board.
-- **Height nudges are per PC.** The automatic feet-on-ground fix runs on everyone's machine, but the nudges you make in the F8 panel are saved on your own PC only.
+- **Only the host sets heights.** The automatic feet-on-ground fix runs on everyone's machine. The F8 nudges come from the host and are sent to every player; on a player's PC the panel only shows them.
 - **Only the host's imports sync.** If a peer imports a mesh, the host and other peers won't see it. Usually fine (the GM does the imports) but worth knowing.
 - **Newly placed characters need one small GM nudge to fully sync on peer screens.** After you place a custom character, click it in edit mode (Tab) and drag it a hair in any direction. That triggers the last bit of engine state that the mod can't cleanly force on its own. One click per placement. After that, everything on the peer side is fully in sync (position, animations, movement, aim). Existing placements load correctly on session restart with no nudge needed.
 

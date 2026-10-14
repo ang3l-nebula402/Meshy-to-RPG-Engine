@@ -110,7 +110,9 @@ namespace RpgEngineAnimatedMeshMod
             }
 
             GUILayout.Space(6f);
-            GUILayout.Label("Use the buttons to move a model up or down. It changes every copy of that model straight away and is saved for next time.", _noteStyle);
+            GUILayout.Label(ModelSync.IsServer
+                ? "Use the buttons to move a model up or down. It changes every copy of that model for everyone in the session straight away and is saved for next time."
+                : "Heights are set by the host (game master) and arrive here automatically. This panel just shows them.", _noteStyle);
 
             GUILayout.BeginHorizontal();
             GUILayout.Label($"{ToggleKey} opens and closes this panel. Drag the title to move it.", _noteStyle);
@@ -128,8 +130,12 @@ namespace RpgEngineAnimatedMeshMod
             GUILayout.BeginVertical(_blockStyle);
             GUILayout.Label(copies > 1 ? $"{meshId}  ({copies} in scene)" : meshId, _nameStyle);
 
+            // v3.1.34: only the host changes heights, players see them read-only.
+            bool canEdit = ModelSync.IsServer;
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Your height: {FormatCm(cm)}", _valueStyle, GUILayout.Width(160f));
+            GUILayout.Label($"{(canEdit ? "Your" : "Host's")} height: {FormatCm(cm)}", _valueStyle, GUILayout.Width(160f));
+            bool wasEnabled = GUI.enabled;
+            GUI.enabled = canEdit;
             foreach (var step in StepsCm)
             {
                 if (GUILayout.Button(step > 0 ? $"+{step}" : step.ToString(), _buttonStyle, GUILayout.Width(46f)))
@@ -137,6 +143,7 @@ namespace RpgEngineAnimatedMeshMod
             }
             if (GUILayout.Button("Reset", _buttonStyle, GUILayout.Width(64f)))
                 Plugin.SetHeightAdjust(meshId, 0f);
+            GUI.enabled = wasEnabled;
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
