@@ -39,8 +39,8 @@ Done. Your character now lives in the prop menu like every other prop, with the 
 **Character looks distorted during animations.**  
 The rig is probably using bone axes the engine's animations weren't built for. Meshy's default rig should be fine; if you re-rigged in Mixamo, AccuRIG, Blender, or something else and it's misbehaving, that's most likely why.
 
-**Character is floating above the ground.**  
-The mod usually catches this at import. If a specific character escapes the fix, restart the game and re-place them, which triggers the alignment code fresh. If that doesn't fix it, open an issue.
+**Character floats above the ground or sinks into it.**  
+The mod measures each model and keeps its feet on the floor automatically, through drags, walking and reloads. If one is still a little off, press **F8** in game to open the Model Heights panel and nudge it up or down in centimetres. The change applies to every copy of that model straight away and is saved for next time. If you raised a model by hand in edit mode before this fix, drag it once so it lands at the corrected height.
 
 **Character imports as a static mannequin, no animations.**  
 Check `BepInEx\LogOutput.log` for a line about missing required bones. Means the mod couldn't find enough of the humanoid skeleton to build an avatar. Usually a rig-name mismatch. Meshy's default names are known-good.

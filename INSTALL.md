@@ -8,7 +8,18 @@ Two flavours: **players** (drop files in, done) and **developers** (build from s
 
 Grab a release archive from the [Releases](https://github.com/ang3l-nebula402/Meshy-to-RPG-Engine/releases) page, or from whoever's sharing the mod with you.
 
-### Steps
+### Easiest: the installer
+
+Extract the archive and double-click `install-windows.bat`. It finds the game folder, copies everything in, and unblocks the DLLs for you. Then launch the game via Steam. If it can't find the game, use the manual steps below.
+
+### Updating an install you already have
+
+If BepInEx and an older version of the mod are already installed, you only need the new mod file. Download `RpgEngineAnimatedMeshMod.dll` from the release, put it in `The RPG Engine\BepInEx\plugins\` (replace the old one), then unblock it:
+```powershell
+Unblock-File "C:\Program Files (x86)\Steam\steamapps\common\The RPG Engine\BepInEx\plugins\RpgEngineAnimatedMeshMod.dll"
+```
+
+### Manual steps
 
 1. **Extract the archive.** You'll get a folder with `BepInEx/`, `winhttp.dll`, `doorstop_config.ini`, `changelog.txt`.
 2. **Copy the contents into your RPG Engine install folder.** Usually:
@@ -28,7 +39,7 @@ Grab a release archive from the [Releases](https://github.com/ang3l-nebula402/Me
 Open `BepInEx\LogOutput.log` in the game folder. Near the top you should see:
 
 ```
-RPG Engine, Animated Custom Mesh v3.1.18 loading
+RPG Engine, Animated Custom Mesh v3.1.30 loading
 Harmony patches applied.
 ```
 

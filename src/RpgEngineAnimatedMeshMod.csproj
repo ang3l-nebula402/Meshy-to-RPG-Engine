@@ -53,6 +53,27 @@
       <HintPath>$(GAMEMANAGED)/UnityEngine.AIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- v3.1.29: in-game Model Heights panel (IMGUI window + uGUI click blocker). -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GAMEMANAGED)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- GLTFUtility so we can strongly-type the ImportGLB patch. -->
     <Reference Include="Siccity.GLTFUtility">
       <HintPath>$(GAMEMANAGED)/Siccity.GLTFUtility.dll</HintPath>

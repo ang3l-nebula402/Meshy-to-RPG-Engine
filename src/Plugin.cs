@@ -3,6 +3,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using RpgEngineAnimatedMeshMod.Patches;
+using UnityEngine;
 
 namespace RpgEngineAnimatedMeshMod
 {
@@ -11,7 +12,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.25";
+        public const string PluginVersion = "3.1.30";
 
         internal static ManualLogSource Log;
 
@@ -21,6 +22,17 @@ namespace RpgEngineAnimatedMeshMod
         // (collider setup, selection wiring), trades animation-parse accuracy
         // for a clickable placed mesh.
         internal static bool SwallowImportExceptions = true;
+
+        // v3.1.27: how strongly an imported model's colour map is fed back in
+        // as emission, so it reads like the older Meshy exports (Jade,
+        // Dragonsfire) instead of disappearing in dim scenes. 0 = lit only.
+        internal static float ImportedTextureGlow = 1f;
+
+        // v3.1.28: hold each imported model's feet on its origin so drag-drops
+        // and walking land it on the ground (see GroundOffset).
+        internal static bool AutoGroundFeet = true;
+
+        private static ConfigFile _config;
 
         private void Awake()
         {
@@ -32,6 +44,29 @@ namespace RpgEngineAnimatedMeshMod
                 defaultValue: true,
                 description: "When GLTFUtility throws during a custom-mesh import, swallow the exception so downstream engine setup (collider, selection handler) completes. Set false to preserve the original error and debug it.");
             SwallowImportExceptions = swallowCfg.Value;
+
+            var glowCfg = Config.Bind(
+                section:  "Appearance",
+                key:      "ImportedTextureGlow",
+                defaultValue: 1f,
+                description: "Brightness boost for imported models. Their colour texture is also used as glow so they stay visible in dim scenes, matching older Meshy exports. 1 = same as Jade/Dragonsfire, 0 = scene lighting only, values like 0.5 or 1.5 sit in between or go brighter. Restart the game after changing.");
+            ImportedTextureGlow = Mathf.Max(0f, glowCfg.Value);
+
+            var groundCfg = Config.Bind(
+                section:  "Appearance",
+                key:      "AutoGroundFeet",
+                defaultValue: true,
+                description: "Keep imported models standing on the ground after you drag them or they walk. The mod measures where each model's feet are and corrects its height automatically. Fine-tune a single model in the [HeightAdjust] section. Restart the game after changing.");
+            AutoGroundFeet = groundCfg.Value;
+            _config = Config;
+
+            var panelKeyCfg = Config.Bind(
+                section:  "Controls",
+                key:      "HeightPanelKey",
+                defaultValue: new KeyboardShortcut(KeyCode.F8),
+                description: "Key that opens and closes the in-game Model Heights panel. F1, F3-F6 and F11 are already used by the game.");
+            HeightPanel.ToggleKey = panelKeyCfg.Value;
+            HeightPanel.Create();
             Log.LogInfo($"{PluginName} v{PluginVersion} loading…");
 
             // Everything we touch is inside the RpgEngine assembly. We patch by
@@ -61,6 +96,10 @@ namespace RpgEngineAnimatedMeshMod
                 //   5. CustomMeshCreatorPatch: install captured clips on the imported mesh
                 AnimationSettingsPatch.ApplyAll(harmony);
                 ShaderFallbackPatch.ApplyAll(harmony);
+                // v3.1.26: the URP fallback reads _BaseMap, GLTFUtility writes
+                // _MainTex. Copy it across so current Meshy exports import
+                // textured instead of as a blank (dark chrome) shape.
+                MaterialFixPatch.ApplyAll(harmony);
                 LegacyClipPatch.ApplyAll(harmony);
                 GltfImporterCapturePatch.ApplyAll(harmony);
                 // v1.0: capture clips directly at GLTFAnimation.Import, the
@@ -122,6 +161,63 @@ namespace RpgEngineAnimatedMeshMod
             {
                 Log.LogError($"Patch application failed: {ex}");
             }
+        }
+
+        /// <summary>
+        /// v3.1.28: per-model manual height nudge, in metres. Each model gets
+        /// its own [HeightAdjust] line the first time it loads, so the GM can
+        /// find it by name. The file is re-read first, so an edit made while
+        /// the game runs applies the next time that model loads.
+        /// </summary>
+        internal static float GetHeightAdjust(string meshId)
+        {
+            try
+            {
+                return BindHeightAdjust(meshId, reload: true)?.Value ?? 0f;
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogWarning($"Could not read [HeightAdjust] for '{meshId}': {ex.Message}");
+                return 0f;
+            }
+        }
+
+        /// <summary>
+        /// v3.1.29: set from the in-game HeightPanel. Saves the entry (BepInEx
+        /// writes the file on set) and applies it live to every placed copy.
+        /// </summary>
+        internal static void SetHeightAdjust(string meshId, float metres)
+        {
+            metres = Mathf.Round(metres * 100f) / 100f;
+            try
+            {
+                var entry = BindHeightAdjust(meshId, reload: false);
+                if (entry != null) entry.Value = metres;
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogWarning($"Could not save [HeightAdjust] for '{meshId}': {ex.Message}");
+            }
+
+            foreach (var ground in GroundOffset.All)
+                if (ground != null && ground.MeshId == meshId) ground.SetManual(metres);
+            Log.LogInfo($"HeightPanel: '{meshId}' manual height set to {metres:+0.00;-0.00;0}m.");
+        }
+
+        private static ConfigEntry<float> BindHeightAdjust(string meshId, bool reload)
+        {
+            if (_config == null || string.IsNullOrEmpty(meshId)) return null;
+            var key = meshId.Trim();
+            foreach (var bad in new[] { '=', '\n', '\t', '\\', '"', '\'', '[', ']' })
+                key = key.Replace(bad, '_');
+            if (key.Length == 0) return null;
+
+            if (reload) _config.Reload();
+            return _config.Bind(
+                section:  "HeightAdjust",
+                key:      key,
+                defaultValue: 0f,
+                description: "Extra height in metres for this model, on top of the automatic feet-on-ground fix. Positive raises it, negative lowers it (0.05 = 5 cm up). Easiest to change in game with the Model Heights panel (F8).");
         }
     }
 }

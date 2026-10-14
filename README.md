@@ -16,7 +16,8 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 - **A Move button that actually moves.** Click Move, pick a spot, character walks there with a proper walk cycle. Works for you and everyone else in the session.
 - **Aim-facing.** Bow shots, throws, and other directional actions rotate the character to face the target instead of firing sideways like it's mad at the wall.
 - **Automatic multiplayer mesh sync.** Drop a custom mesh, everyone in the session gets it. No "hey can you download this glb and put it in..." over Discord.
-- **Feet on the ground.** Meshy loves exporting characters that hover just enough to feel wrong. The mod detects it and gently pushes them down.
+- **Feet on the ground.** Meshy models rarely have their feet where the engine expects, so they used to sink or float every time you dragged them. The mod measures each model and keeps its feet on the floor through drags, walking and reloads. Need a centimetre or two either way? Press **F8** in game for the Model Heights panel.
+- **Textures that actually show up.** Current Meshy exports used to import as a blank (or dark chrome) shape. The mod puts the colour texture where the engine's shader looks for it, with a gentle glow so models stay readable in dim scenes like the older exports did.
 - **Less chrome.** URP's default rendering makes every GLB look like it was dipped in chrome. This dials that back to something closer to what Meshy showed you.
 - **No stuck-pose surprises.** Reloading a session used to leave characters in bizarre saved-mid-attack poses. Fixed.
 
@@ -30,7 +31,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 
 Full step-by-step in [INSTALL.md](INSTALL.md). The one-paragraph version:
 
-Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.18 loading` and you're in.
+Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.30 loading` and you're in.
 
 ## Multiplayer
 
@@ -59,6 +60,8 @@ The mod hangs Harmony patches on various engine methods. Rough tour:
 - `NativeSkeletonProbe`: the first time you click any native NPC in the scene, this steals their `C_Humanoid` controller and stashes it so your custom mesh can borrow it.
 - `MoveToInterceptPatch` + `PeerMovementPatch` + `LookAtInterceptPatch`: the engine hard-gates several interactions on "is this a PickupableAI?", these prefixes politely let our `PickupableMesh` through the velvet rope.
 - `MeshBroadcastPatch`: when the host loads a mesh, this broadcasts the raw bytes to peers using the engine's existing sync packet.
+- `MaterialFixPatch`: GLTFUtility writes the colour map to `_MainTex`, the URP shader reads `_BaseMap`. This copies it across, zeroes metallic, and reuses the colour map as emission (`ImportedTextureGlow` in the config). Older exports that already carry the colour in their emissive slot are left alone.
+- `GroundOffset` + `HeightPanel`: the engine drops props with their origin on the ground, so each import gets its lowest point measured once it settles and held on that origin (on the hips for humanoids, on the mesh child for static props). The F8 panel edits a per-model `[HeightAdjust]` nudge on top, live.
 - A pile of GLTFUtility fallbacks (`ShaderFallbackPatch`, `AnimationSettingsPatch`, `LegacyClipPatch`, `GltfImporterCapturePatch`) that stop the import pipeline from throwing when it hits missing shaders or awkward clip data.
 
 Runtime components attached to each import: `HumanoidTag` (a marker so we know this pickupable is ours), `MovementBridge` (injects the `⁂move⁂` and `Movement Speed` delegates the panel needs), `IdleGuard` (spends its first 30 frames aggressively resetting the animator to Idle to override the engine's stuck-state-restoration bug).
@@ -69,6 +72,7 @@ None of these are dealbreakers, all of them are honest:
 
 - **Weirdly-rigged models can show distortion during action animations.** Meshy's default rig is fine; if you're using a different rigging tool and things look off, [RIG-GUIDE.md](RIG-GUIDE.md) has thoughts.
 - **A slight sheen remains** even after the material tone-down. URP interprets Meshy's PBR properties differently than Meshy's own viewer does. The mod gets it close, not identical.
+- **Height nudges are per PC.** The automatic feet-on-ground fix runs on everyone's machine, but the nudges you make in the F8 panel are saved on your own PC only.
 - **Only the host's imports sync.** If a peer imports a mesh, the host and other peers won't see it. Usually fine (the GM does the imports) but worth knowing.
 - **Newly placed characters need one small GM nudge to fully sync on peer screens.** After you place a custom character, click it in edit mode (Tab) and drag it a hair in any direction. That triggers the last bit of engine state that the mod can't cleanly force on its own. One click per placement. After that, everything on the peer side is fully in sync (position, animations, movement, aim). Existing placements load correctly on session restart with no nudge needed.
 

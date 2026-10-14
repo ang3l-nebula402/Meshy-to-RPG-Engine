@@ -152,6 +152,8 @@ namespace RpgEngineAnimatedMeshMod.Patches
                 if (skinned.Length == 0)
                 {
                     log.LogInfo("  → static mesh (no SMR); leaving untouched.");
+                    // v3.1.28: still keep it standing on the ground.
+                    GroundOffset.Attach(root, __instance);
                     return;
                 }
 
@@ -160,6 +162,7 @@ namespace RpgEngineAnimatedMeshMod.Patches
                 if (!boneCounts.Any(b => b > 0))
                 {
                     log.LogInfo("  → SMR present but no bones bound; leaving untouched.");
+                    GroundOffset.Attach(root, __instance);
                     return;
                 }
 
@@ -174,6 +177,8 @@ namespace RpgEngineAnimatedMeshMod.Patches
 
                 log.LogInfo($"  → skeleton detected. Installing legacy Animation on '{root.name}'.");
                 AnimationBuilder.InstallAnimator(root);
+                // v3.1.28: after the install, so it sees the humanoid Animator.
+                GroundOffset.Attach(root, __instance);
             }
             catch (Exception ex)
             {
@@ -217,6 +222,7 @@ namespace RpgEngineAnimatedMeshMod.Patches
 
                 log.LogInfo($"Finalizer path: '{root.name}' has skeleton, installing Animation despite original exception.");
                 AnimationBuilder.InstallAnimator(root);
+                GroundOffset.Attach(root, __instance);
             }
             catch (Exception ex)
             {
