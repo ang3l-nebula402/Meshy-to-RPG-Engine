@@ -27,6 +27,9 @@ namespace RpgEngineAnimatedMeshMod
     internal static class ModelSync
     {
         private const string HeightKey = "am_heightAdjust";
+        // v3.1.35: the host's measured feet-on-ground correction, so players
+        // use the same number instead of measuring their own.
+        private const string GroundKey = "am_groundAuto";
 
         private static PropertyInfo _isServer;
         private static PropertyInfo _propProperty;
@@ -127,6 +130,22 @@ namespace RpgEngineAnimatedMeshMod
             SyncGuard.MarkChanged(ground);
         }
 
+        /// <summary>Host side: share a settled ground correction with players.</summary>
+        internal static void PushAuto(GroundOffset ground, float local)
+        {
+            if (ground == null || ground.Pickupable == null) return;
+            WriteFloat(ground.Pickupable, GroundKey, local);
+            SendGenericData(ground.Pickupable);
+            SyncGuard.MarkChanged(ground);
+        }
+
+        /// <summary>Player side: the host's ground correction, if it has arrived.</summary>
+        internal static bool TryGetHostAuto(Component pickupable, out float local)
+        {
+            local = 0f;
+            return pickupable != null && TryReadFloat(GenericData(pickupable), GroundKey, out local);
+        }
+
         /// <summary>Host side: reliable resend of a model's transform and height.</summary>
         internal static void Resend(GroundOffset ground)
         {
@@ -151,12 +170,22 @@ namespace RpgEngineAnimatedMeshMod
                 var field = prop?.GetType().GetField("genericData");
                 field?.SetValue(prop, data);
 
-                if (!TryReadHeight(data, out float metres)) return;
                 var ground = (__instance as Component)?.GetComponent<GroundOffset>();
                 if (ground == null) return;
-                if (Mathf.Abs(ground.ManualLocal - metres) > 0.0001f)
-                    Plugin.Log.LogInfo($"ModelSync: '{ground.MeshId}' height from the host {metres:+0.00;-0.00;0}m.");
-                ground.SetManual(metres);
+
+                if (TryReadHeight(data, out float metres))
+                {
+                    if (Mathf.Abs(ground.ManualLocal - metres) > 0.0001f)
+                        Plugin.Log.LogInfo($"ModelSync: '{ground.MeshId}' height from the host {metres:+0.00;-0.00;0}m.");
+                    ground.SetManual(metres);
+                }
+
+                if (!IsServer && TryReadFloat(data, GroundKey, out float auto))
+                {
+                    if (Mathf.Abs(ground.AutoLocal - auto) > 0.0001f)
+                        Plugin.Log.LogInfo($"ModelSync: '{ground.MeshId}' ground correction from the host {auto:+0.000;-0.000}m.");
+                    ground.SetAutoFromHost(auto);
+                }
             }
             catch (Exception ex)
             {
@@ -170,20 +199,24 @@ namespace RpgEngineAnimatedMeshMod
             return prop?.GetType().GetField("genericData")?.GetValue(prop);
         }
 
-        private static void WriteHeight(Component pickupable, float metres)
+        private static void WriteHeight(Component pickupable, float metres) => WriteFloat(pickupable, HeightKey, metres);
+
+        private static bool TryReadHeight(object data, out float metres) => TryReadFloat(data, HeightKey, out metres);
+
+        private static void WriteFloat(Component pickupable, string key, float value)
         {
             var data = GenericData(pickupable);
-            data?.GetType().GetMethod("Set", new[] { typeof(string), typeof(float) })?.Invoke(data, new object[] { HeightKey, metres });
+            data?.GetType().GetMethod("Set", new[] { typeof(string), typeof(float) })?.Invoke(data, new object[] { key, value });
         }
 
-        private static bool TryReadHeight(object data, out float metres)
+        private static bool TryReadFloat(object data, string key, out float value)
         {
-            metres = 0f;
+            value = 0f;
             if (data == null) return false;
             var getFloat = data.GetType().GetMethod("GetFloat", new[] { typeof(string), typeof(float) });
             if (getFloat == null) return false;
-            metres = (float)getFloat.Invoke(data, new object[] { HeightKey, float.NaN });
-            return !float.IsNaN(metres);
+            value = (float)getFloat.Invoke(data, new object[] { key, float.NaN });
+            return !float.IsNaN(value);
         }
 
         private static void SendGenericData(Component pickupable)

@@ -12,7 +12,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.34";
+        public const string PluginVersion = "3.1.35";
 
         internal static ManualLogSource Log;
 

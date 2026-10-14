@@ -23,10 +23,6 @@ namespace RpgEngineAnimatedMeshMod
     /// </summary>
     internal static class AnimationBuilder
     {
-        // Instance-IDs of pickupables where AlignMeshToGround already warned about
-        // broken bounds. Prevents 30 identical log lines per import when IdleGuard
-        // retries every frame.
-        private static readonly HashSet<int> _loggedBrokenBoundsThisSession = new HashSet<int>();
 
         internal static void InstallAnimator(GameObject root)
         {
@@ -340,13 +336,9 @@ namespace RpgEngineAnimatedMeshMod
             var smr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault();
             EnsureCollider(root, smr);
 
-            // Meshy exports GLBs where the character mesh's local origin is
-            // BELOW the feet (mesh geometry extends upward from origin), so
-            // when we place the transform at ground level the model floats.
-            // Measure the world-space bounds of the SMR and shift the mesh's
-            // parent transform down so the lowest point of the mesh sits at
-            // the pickupable root's y position (i.e., feet on the floor).
-            AlignMeshToGround(root);
+            // v3.1.35: grounding is GroundOffset's job (attached after this
+            // install). The old bounds-based AlignMeshToGround shifted GFX by
+            // metres on stale bounds, differently on each PC, and fought it.
 
             // v3.1.18: on session reload, the engine restores animator state
             // from disk via SetAnimationData AFTER our install runs. That
@@ -582,62 +574,6 @@ namespace RpgEngineAnimatedMeshMod
                 }
             }
             log.LogInfo($"SoftenMaterials: toned down {materialsUpdated} material(s) on '{root.name}' (smoothness→0.2, metallic→0).");
-        }
-
-        /// <summary>
-        /// Shift the imported mesh down so its lowest vertex sits at the
-        /// pickupable root's y position (i.e., feet touch the floor).
-        /// Meshy GLBs typically export with a local-origin BELOW the feet,
-        /// so the mesh floats above the transform without this correction.
-        /// </summary>
-        /// <summary>Public wrapper so IdleGuard can re-invoke alignment each frame.</summary>
-        internal static void AlignMeshToGroundExternal(GameObject root) => AlignMeshToGround(root);
-
-        private static void AlignMeshToGround(GameObject root)
-        {
-            var log = Plugin.Log;
-            var smr = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault();
-            if (smr == null) return;
-
-            smr.ResetBounds();
-            var worldBounds = smr.bounds;
-            var lowestY = worldBounds.min.y;
-            var floatAmount = lowestY - root.transform.position.y;
-
-            // Sanity gate on BOTH sides. Real characters float within roughly
-            // -0.5m to +3m. Anything outside that band = broken bounds (mesh
-            // vertices in orbit, or 100+m underground due to bad skinning
-            // weights). Neither case is safe to act on. Skip silently to
-            // avoid the log spam that IdleGuard's repeated retries would
-            // otherwise produce.
-            if (floatAmount > 3f || floatAmount < -3f)
-            {
-                // Log ONCE per install rather than every retry frame.
-                if (!_loggedBrokenBoundsThisSession.Contains(root.GetInstanceID()))
-                {
-                    log.LogWarning($"AlignMeshToGround: '{root.name}' has broken SMR bounds (min.y={lowestY:F1}, root.y={root.transform.position.y:F1}, delta={floatAmount:F1}m). Mesh may render at wrong location, but skip is safer than shift.");
-                    _loggedBrokenBoundsThisSession.Add(root.GetInstanceID());
-                }
-                return;
-            }
-
-            if (floatAmount < 0.05f) return;   // already grounded, no need to log
-
-            // Shift the mesh child (the imported GLB root, usually parented
-            // to a "GFX" transform on the PickupableMesh) down by floatAmount.
-            // Find the highest ancestor of the SMR that isn't `root` itself.
-            var meshChild = smr.transform;
-            while (meshChild.parent != null && meshChild.parent != root.transform)
-                meshChild = meshChild.parent;
-
-            if (meshChild == root.transform)
-            {
-                log.LogInfo("  → SMR is on the pickupable root, can't shift the child. Skipping.");
-                return;
-            }
-
-            meshChild.localPosition -= new Vector3(0f, floatAmount, 0f);
-            log.LogInfo($"  → shifted '{meshChild.name}' down by {floatAmount:F3}m.");
         }
 
         /// <summary>
@@ -961,9 +897,7 @@ namespace RpgEngineAnimatedMeshMod
     ///
     /// 1. Force the animator into Idle each frame, overriding any late
     ///    state-restoration from the engine's disk-save reload path.
-    /// 2. Re-run AlignMeshToGround each frame so we correct floating that
-    ///    happens when the initial spawn-time bounds read is stale (peer
-    ///    side commonly, but also GM-side sometimes).
+    /// 2. (Removed in v3.1.35: ground alignment, now GroundOffset's job.)
     /// 3. Force SkinnedMeshRenderer bounds refresh each frame so the renderer
     ///    isn't frustum-culled to invisibility before its first update
     ///    (the "won't appear on peer until GM does an action" bug).
@@ -996,13 +930,11 @@ namespace RpgEngineAnimatedMeshMod
                 try { _animator.SetFloat("Movement Speed", 0f); } catch { }
             }
 
-            // 2. Ground alignment + bounds reset only every 5th frame. Cheaper
-            //    on CPU AND avoids the log spam of the same "already grounded"
-            //    line repeating 30 times per import. Still hits the SMR often
-            //    enough to catch late bounds population.
+            // 2. Bounds reset every 5th frame, so the renderer isn't culled
+            //    before its first update. (v3.1.35: ground alignment moved to
+            //    GroundOffset, which measures once the pose has settled.)
             if (_framesLeft % 5 == 0)
             {
-                try { AnimationBuilder.AlignMeshToGroundExternal(gameObject); } catch { }
                 foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
                     try { smr.ResetBounds(); } catch { }
