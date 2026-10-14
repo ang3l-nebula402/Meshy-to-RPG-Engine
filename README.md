@@ -31,7 +31,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 
 Full step-by-step in [INSTALL.md](INSTALL.md). The one-paragraph version:
 
-Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.30 loading` and you're in.
+Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.31 loading` and you're in.
 
 ## Multiplayer
 

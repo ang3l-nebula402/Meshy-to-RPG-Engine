@@ -159,6 +159,78 @@ namespace RpgEngineAnimatedMeshMod
 
             log.LogInfo($"HumanoidAvatarBuilder: mapped {mapped.Count} bones on '{root.name}'.");
 
+            // v3.1.31: the skeleton table BuildAvatar captures IS the avatar's T-pose. Exports
+            // with the arms angled down (Meshy's A-pose, e.g. its Mixamo
+            // template) made every animation start 45° too low, folding the
+            // arms behind the back. Straighten them for the capture, then put
+            // the bones back once the avatar is built.
+            var straightened = EnforceArmTPose(mapped);
+            try
+            {
+                return BuildAvatar(root, humanBones);
+            }
+            finally
+            {
+                for (int i = straightened.Count - 1; i >= 0; i--)
+                    straightened[i].Bone.localRotation = straightened[i].Original;
+            }
+        }
+
+        // Arms already this close to a T-pose are left exactly as exported, so
+        // rigs that animate correctly today don't change.
+        private const float ArmTPoseToleranceDegrees = 20f;
+
+        /// <summary>
+        /// Rotate each upper and lower arm that's well off horizontal so it
+        /// points straight out from the shoulders, the way Unity's importer
+        /// does with "Enforce T-Pose". Returns the original local rotations so
+        /// the caller can restore them.
+        /// </summary>
+        private static List<(Transform Bone, Quaternion Original)> EnforceArmTPose(Dictionary<HumanBodyBones, Transform> mapped)
+        {
+            var changed = new List<(Transform Bone, Quaternion Original)>();
+            if (!mapped.TryGetValue(HumanBodyBones.LeftUpperArm, out var leftUpper) ||
+                !mapped.TryGetValue(HumanBodyBones.RightUpperArm, out var rightUpper))
+                return changed;
+
+            // "Outward" is the line between the shoulders, flattened onto the
+            // ground plane, so it works whichever way the export faces.
+            var across = leftUpper.position - rightUpper.position;
+            across.y = 0f;
+            if (across.sqrMagnitude < 1e-6f) return changed;
+            across.Normalize();
+
+            StraightenArm(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, across);
+            StraightenArm(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, -across);
+            return changed;
+
+            void StraightenArm(HumanBodyBones upperBone, HumanBodyBones lowerBone, HumanBodyBones handBone, Vector3 outward)
+            {
+                if (!mapped.TryGetValue(upperBone, out var upper) ||
+                    !mapped.TryGetValue(lowerBone, out var lower) ||
+                    !mapped.TryGetValue(handBone, out var hand))
+                    return;
+
+                float offBy = Vector3.Angle(lower.position - upper.position, outward);
+                if (offBy < ArmTPoseToleranceDegrees) return;
+
+                PointAlong(upper, lower.position - upper.position, outward);
+                PointAlong(lower, hand.position - lower.position, outward);
+                Plugin.Log.LogInfo($"HumanoidAvatarBuilder: '{upper.name}' was {offBy:F0}° off a T-pose (A-pose export), straightened for the avatar.");
+            }
+
+            void PointAlong(Transform bone, Vector3 from, Vector3 to)
+            {
+                if (from.sqrMagnitude < 1e-8f) return;
+                changed.Add((bone, bone.localRotation));
+                bone.rotation = Quaternion.FromToRotation(from, to) * bone.rotation;
+            }
+        }
+
+        private static Avatar BuildAvatar(GameObject root, List<HumanBone> humanBones)
+        {
+            var log = Plugin.Log;
+
             // Build the skeleton bone table, must include ALL bones under root.
             var skeleton = root.GetComponentsInChildren<Transform>(true)
                 .Select(t => new SkeletonBone

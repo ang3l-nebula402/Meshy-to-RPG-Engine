@@ -39,7 +39,7 @@ Unblock-File "C:\Program Files (x86)\Steam\steamapps\common\The RPG Engine\BepIn
 Open `BepInEx\LogOutput.log` in the game folder. Near the top you should see:
 
 ```
-RPG Engine, Animated Custom Mesh v3.1.30 loading
+RPG Engine, Animated Custom Mesh v3.1.31 loading
 Harmony patches applied.
 ```
 
