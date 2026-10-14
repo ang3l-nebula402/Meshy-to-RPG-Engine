@@ -12,7 +12,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.32";
+        public const string PluginVersion = "3.1.33";
 
         internal static ManualLogSource Log;
 
@@ -75,6 +75,14 @@ namespace RpgEngineAnimatedMeshMod
                 description: "On an XE (or XE Raised) Tilt Five board, let a map that uses a Tilt Five board object fill the whole mat. The game otherwise blacks out the far third of an XE mat. Set false to get the game's original behaviour back. Restart the game after changing.");
             Tilt5XeCutout.Enabled = xeCfg.Value;
             Tilt5XeCutout.Create();
+
+            var hideWandsCfg = Config.Bind(
+                section:  "TiltFive",
+                key:      "HideWands",
+                defaultValue: true,
+                description: "Hide the Tilt Five wand, its laser and the floating button toolbar, and ignore every wand button, trigger and stick, for tables that only use the glasses to look at the map. Set false to use wands again. Restart the game after changing.");
+            Tilt5HideWands.Enabled = hideWandsCfg.Value;
+            Tilt5HideWands.Create();
             Log.LogInfo($"{PluginName} v{PluginVersion} loading…");
 
             // Everything we touch is inside the RpgEngine assembly. We patch by
@@ -155,6 +163,8 @@ namespace RpgEngineAnimatedMeshMod
                 // version's broken broadcast), delete the file so the engine's
                 // request-from-server fallback replaces it cleanly next time.
                 CorruptCacheSelfHealPatch.ApplyAll(harmony);
+                // v3.1.33: Tilt Five without wands (see Tilt5HideWands).
+                Tilt5HideWands.ApplyAll(harmony);
                 Log.LogInfo("Harmony patches applied.");
 
                 // Eager attempt: often the C_Humanoid controller is loaded

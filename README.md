@@ -19,6 +19,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 - **Feet on the ground.** Meshy models rarely have their feet where the engine expects, so they used to sink or float every time you dragged them. The mod measures each model and keeps its feet on the floor through drags, walking and reloads. Need a centimetre or two either way? Press **F8** in game for the Model Heights panel.
 - **Textures that actually show up.** Current Meshy exports used to import as a blank (or dark chrome) shape. The mod puts the colour texture where the engine's shader looks for it, with a gentle glow so models stay readable in dim scenes like the older exports did.
 - **The whole Tilt Five XE mat.** The engine clips what the glasses see to a square sized for the standard board, which blacks out the far third of an XE mat. When a map uses a Tilt Five board object and the board is an XE, the mod opens that up to the full mat. Needs the mod on the PC the glasses are plugged into.
+- **Tilt Five without wands.** By default the mod hides the wand, its laser and the floating button toolbar, and ignores every wand button, trigger and stick, so the glasses are just a window onto the map. Set `HideWands = false` under `[TiltFive]` in the mod's config to use wands again.
 - **Less chrome.** URP's default rendering makes every GLB look like it was dipped in chrome. This dials that back to something closer to what Meshy showed you.
 - **No stuck-pose surprises.** Reloading a session used to leave characters in bizarre saved-mid-attack poses. Fixed.
 
@@ -32,7 +33,7 @@ With the mod, your Meshy character behaves like it grew up in the engine:
 
 Full step-by-step in [INSTALL.md](INSTALL.md). The one-paragraph version:
 
-Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.32 loading` and you're in.
+Download the release zip, drop the contents into your `The RPG Engine\` game folder, and if you're on Windows, right-click every DLL and hit **Unblock** (Windows silently refuses to load unsigned DLLs from the internet, this catches everyone once). Launch the game. Peek at `BepInEx/LogOutput.log` for a line like `RPG Engine, Animated Custom Mesh v3.1.33 loading` and you're in.
 
 ## Multiplayer
 
