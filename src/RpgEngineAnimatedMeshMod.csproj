@@ -74,6 +74,11 @@
       <HintPath>$(GAMEMANAGED)/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- v3.1.32: Tilt Five SDK, for the XE gameboard extents and pose. -->
+    <Reference Include="TiltFive">
+      <HintPath>$(GAMEMANAGED)/TiltFive.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- GLTFUtility so we can strongly-type the ImportGLB patch. -->
     <Reference Include="Siccity.GLTFUtility">
       <HintPath>$(GAMEMANAGED)/Siccity.GLTFUtility.dll</HintPath>

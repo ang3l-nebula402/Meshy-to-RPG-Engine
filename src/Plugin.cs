@@ -12,7 +12,7 @@ namespace RpgEngineAnimatedMeshMod
     {
         public const string PluginGuid    = "com.elaravtt.rpgengine.animatedmesh";
         public const string PluginName    = "RPG Engine, Animated Custom Mesh";
-        public const string PluginVersion = "3.1.31";
+        public const string PluginVersion = "3.1.32";
 
         internal static ManualLogSource Log;
 
@@ -67,6 +67,14 @@ namespace RpgEngineAnimatedMeshMod
                 description: "Key that opens and closes the in-game Model Heights panel. F1, F3-F6 and F11 are already used by the game.");
             HeightPanel.ToggleKey = panelKeyCfg.Value;
             HeightPanel.Create();
+
+            var xeCfg = Config.Bind(
+                section:  "TiltFive",
+                key:      "FullXeMat",
+                defaultValue: true,
+                description: "On an XE (or XE Raised) Tilt Five board, let a map that uses a Tilt Five board object fill the whole mat. The game otherwise blacks out the far third of an XE mat. Set false to get the game's original behaviour back. Restart the game after changing.");
+            Tilt5XeCutout.Enabled = xeCfg.Value;
+            Tilt5XeCutout.Create();
             Log.LogInfo($"{PluginName} v{PluginVersion} loading…");
 
             // Everything we touch is inside the RpgEngine assembly. We patch by
