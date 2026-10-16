@@ -232,14 +232,27 @@ namespace RpgEngineAnimatedMeshMod
             var log = Plugin.Log;
 
             // Build the skeleton bone table, must include ALL bones under root.
+            //
+            // v3.1.36: the root's own entry is the identity, never its live
+            // transform. The root is the placed prop, so its localPosition is
+            // wherever it sat on the map when the import finished, and the
+            // avatar read that as part of the T-pose. Built at y = -2 the
+            // hips "rested" 1 m below the floor, so every animation buried the
+            // model, and humanScale (which also sets the walk speed through
+            // Puppet.OnAnimatorMove) came out wrong. Hips that landed near the
+            // floor gave a model sunk to the belt that barely walked. A scaled
+            // prop baked its scale in too and then got scaled again.
+            var rootTransform = root.transform;
             var skeleton = root.GetComponentsInChildren<Transform>(true)
-                .Select(t => new SkeletonBone
-                {
-                    name = t.name,
-                    position = t.localPosition,
-                    rotation = t.localRotation,
-                    scale = t.localScale,
-                })
+                .Select(t => t == rootTransform
+                    ? new SkeletonBone { name = t.name, position = Vector3.zero, rotation = Quaternion.identity, scale = Vector3.one }
+                    : new SkeletonBone
+                    {
+                        name = t.name,
+                        position = t.localPosition,
+                        rotation = t.localRotation,
+                        scale = t.localScale,
+                    })
                 .ToArray();
 
             var desc = new HumanDescription

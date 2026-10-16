@@ -388,6 +388,10 @@ namespace RpgEngineAnimatedMeshMod
 
             log.LogInfo($"'{root.name}': installed HUMANOID Animator with '{controller.name}' + custom Avatar. " +
                         $"Native animation panel will drive it directly ({controller.animationClips.Length} clips available).");
+            // v3.1.36: humanScale is the avatar's hip height in metres (about
+            // 0.9 for a person). It sets where the hips sit and how fast the
+            // model walks, so a number far off that means sinking or crawling.
+            log.LogInfo($"'{root.name}': avatar humanScale {animator.humanScale:F3}.");
 
             // IMPORTANT: no PickupableAnimationExposer added, with a real
             // Animator on the pickupable, the engine's FindAllAnimations
@@ -432,6 +436,20 @@ namespace RpgEngineAnimatedMeshMod
             // and any Puppet.Update snaps them back to that hover height every
             // frame (visible bump-up right after a manual drag-down).
             if (navAgent != null) navAgent.baseOffset = 0f;
+
+            // v3.1.36: Puppet.LateUpdate zeroes motionBone's local z on every
+            // frame of a walk, and native prefabs set it in the editor. Ours
+            // was null, so each walking frame threw a NullReferenceException
+            // into Player.log (300-470 per walk). An empty child takes the
+            // write harmlessly; the humanoid hips must not, or the body would
+            // jump forward or back while walking.
+            var motionBoneField = puppetType.GetField("motionBone");
+            if (motionBoneField != null && motionBoneField.GetValue(puppet) as Transform == null)
+            {
+                var motionBone = new GameObject("AM_MotionBone").transform;
+                motionBone.SetParent(root.transform, false);
+                motionBoneField.SetValue(puppet, motionBone);
+            }
 
             log.LogInfo($"InstallMovementBits: Puppet={(puppet == null ? "MISSING" : "present")} | " +
                         $"NavMeshAgent={(navAgent == null ? "MISSING" : $"present, onNavMesh={navAgent.isOnNavMesh}, baseOffset={navAgent.baseOffset}")}");
